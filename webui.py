@@ -83,14 +83,17 @@ def restore_image(img, model_name, denoise_strength, outscale, tile, tile_pad, p
   return output
 
 def restore_video(video_path, model_name, denoise_strength, outscale, tile, tile_pad, pre_pad, face_enhance, fp32, alpha_upsampler, gpu_id, fps, ffmpeg_bin, extract_frame_first, num_process_per_gpu):
-    output_dir = osp.join(osp.dirname(__file__), 'output')  # Salva apenas em output/
+    output_dir = osp.join(osp.dirname(__file__), 'output/gradio')  # Forçar saída em output/gradio
+    os.makedirs(output_dir, exist_ok=True)  # Criar pasta se não existir
+
     video_name, ext = osp.splitext(osp.basename(video_path))
     suffix = str(outscale) + "x." + model_name
-    final_path = osp.join(output_dir, f"{video_name}_{suffix}.mp4")  # Garante que Gradio gere link certo
+    final_path = osp.join(output_dir, f"{video_name}_{suffix}.mp4")  # Salvar diretamente em output/gradio
 
-    # Se o arquivo já existir, remove para evitar duplicação
+    fps = fps if len(fps) != 0 else None
+
     if osp.exists(final_path):
-        os.remove(final_path)
+        os.remove(final_path)  # Evitar duplicação
 
     args = structify({
         "input": video_path,
