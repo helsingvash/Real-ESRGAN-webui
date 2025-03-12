@@ -9,6 +9,14 @@ from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
+import tempfile
+# Configurar o Gradio para usar a pasta de saída persistente
+persistent_output_dir = os.path.join(os.path.dirname(__file__), 'output')
+os.makedirs(persistent_output_dir, exist_ok=True)  # Criar a pasta se não existir
+
+# Alterar o diretório temporário do Gradio para evitar /tmp/gradio/
+tempfile.tempdir = persistent_output_dir
+
 
 class Struct(dict):
   def __init__(self, **entries):
@@ -75,59 +83,63 @@ def restore_image(img, model_name, denoise_strength, outscale, tile, tile_pad, p
   return output
 
 def restore_video(video_path, model_name, denoise_strength, outscale, tile, tile_pad, pre_pad, face_enhance, fp32, alpha_upsampler, gpu_id, fps, ffmpeg_bin, extract_frame_first, num_process_per_gpu):
-  output_dir = osp.dirname(video_path)
-  video_name, ext = osp.splitext(osp.basename(video_path))
-  suffix = str(outscale) + "x." + model_name
-  final_path = osp.join(output_dir,f"{video_name}_{suffix}.mp4")
-  fps = fps if len(fps)!=0 else None
+    output_dir = osp.join(osp.dirname(__file__), 'output')  # Salva apenas em output/
+    video_name, ext = osp.splitext(osp.basename(video_path))
+    suffix = str(outscale) + "x." + model_name
+    final_path = osp.join(output_dir, f"{video_name}_{suffix}.mp4")  # Garante que Gradio gere link certo
 
-  if (osp.exists(final_path)):
-    # return gr.Video.update(value=final_path)
-    os.remove(final_path)
+    # Se o arquivo já existir, remove para evitar duplicação
+    if osp.exists(final_path):
+        os.remove(final_path)
 
-  args = structify({
-    "input":video_path,
-    "output":output_dir,
-    "video_name":video_name,
-    "suffix":suffix,
-    "model_name":model_name,
-    "denoise_strength":denoise_strength,
-    "outscale":outscale,
-    "tile":tile,
-    "tile_pad":tile_pad,
-    "pre_pad":pre_pad,
-    "face_enhance":face_enhance,
-    "fp32":fp32,
-    "alpha_upsampler":alpha_upsampler,
-    "gpu_id":gpu_id,
-    "fps":fps,
-    "ffmpeg_bin":ffmpeg_bin,
-    "extract_frame_first":extract_frame_first,
-    "num_process_per_gpu":num_process_per_gpu
-  })
+    args = structify({
+        "input": video_path,
+        "output": output_dir,  # Mantém a saída apenas em output/
+        "video_name": video_name,
+        "suffix": suffix,
+        "model_name": model_name,
+        "denoise_strength": denoise_strength,
+        "outscale": outscale,
+        "tile": tile,
+        "tile_pad": tile_pad,
+        "pre_pad": pre_pad,
+        "face_enhance": face_enhance,
+        "fp32": fp32,
+        "alpha_upsampler": alpha_upsampler,
+        "gpu_id": gpu_id,
+        "fps": fps if fps else None,  # Caso fps seja string vazia, mantém None
+        "ffmpeg_bin": ffmpeg_bin,
+        "extract_frame_first": extract_frame_first,
+        "num_process_per_gpu": num_process_per_gpu
+    })
 
-  print("output: " + osp.join(args.output, f'{args.video_name}_{args.suffix}.mp4'))
+    print("output: " + final_path)
 
-  if mimetypes.guess_type(args.input)[0] is not None and mimetypes.guess_type(args.input)[0].startswith('video'):
-    is_video = True
-  else:
-    is_video = False
+    # Verificar se o arquivo de entrada é um vídeo
+    if mimetypes.guess_type(args.input)[0] is not None and mimetypes.guess_type(args.input)[0].startswith('video'):
+        is_video = True
+    else:
+        is_video = False
 
-  if is_video and args.input.endswith('.flv'):
-    mp4_path = args.input.replace('.flv', '.mp4')
-    os.system(f'{ffmpeg_bin} -i {args.input} -codec copy {mp4_path}')
-    args.input = mp4_path
+    # Se for um vídeo FLV, converte para MP4 antes de processar
+    if is_video and args.input.endswith('.flv'):
+        mp4_path = args.input.replace('.flv', '.mp4')
+        os.system(f'{ffmpeg_bin} -i {args.input} -codec copy {mp4_path}')
+        args.input = mp4_path
 
-  if args.extract_frame_first and not is_video:
-    args.extract_frame_first = False
+    # Se não for um vídeo, não extrai frames
+    if args.extract_frame_first and not is_video:
+        args.extract_frame_first = False
 
-  irv.run(args)
+    # Rodar o processamento do vídeo
+    irv.run(args)
 
-  if args.extract_frame_first:
-    tmp_frames_folder = osp.join(args.output, f'{args.video_name}_inp_tmp_frames')
-    shutil.rmtree(tmp_frames_folder)
+    # Limpar frames temporários caso tenham sido extraídos
+    if args.extract_frame_first:
+        tmp_frames_folder = osp.join(args.output, f'{args.video_name}_inp_tmp_frames')
+        shutil.rmtree(tmp_frames_folder, ignore_errors=True)
 
-  return final_path
+    return final_path  # Retorna o caminho correto do arquivo
 
 
 with gr.Blocks(title="Real-ESRGAN") as demo:
@@ -143,10 +155,10 @@ with gr.Blocks(title="Real-ESRGAN") as demo:
     with gr.TabItem("Restore Image"):
       with gr.Row():
         with gr.Column():
-          image_input = gr.Image(label="Input", image_mode="RGBA").style(height=300)
+          image_input = gr.Image(label="Input", image_mode="RGBA")
           gr.Examples(inputs=image_input,examples=list(map(lambda input_file:osp.join(REAL_ESRGAN_DIR, "inputs", input_file),["00003.png","0014.jpg","00017_gray.png","0030.jpg","ADE_val_00000114.jpg","children-alpha.png","OST_009.png","tree_alpha_16bit.png","wolf_gray.jpg"])))
         with gr.Column():
-          image_output = gr.Image(label="Output", interactive=False, image_mode="RGBA").style(height=300)
+          image_output = gr.Image(label="Output", interactive=False, image_mode="RGBA")
           restore_image_button = gr.Button("Restore", variant="primary")
     with gr.TabItem("Restore Video"):
       with gr.Row():
