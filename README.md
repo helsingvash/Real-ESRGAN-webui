@@ -12,7 +12,7 @@ A browser interface based on Gradio library for [Real-ESRGAN](https://github.com
 
 1. Clone repo
    ```sh
-   git clone https://github.com/coderxi1/Real-ESRGAN-webui.git --recurse-submodules
+   git clone https://github.com/helsingvash/RealESRGAN-Web-ui.git
    cd Real-ESRGAN-webui
    ```
 2. Install dependent packages
